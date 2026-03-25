@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - Unique user ID
+    //   - email: string (required, email) - User's email
+    //   - displayName: string (optional) - User's name
+    //   - photoURL: string (optional) - User's avatar URL
+    //   - createdAt: string (required, ISO8601) - Creation timestamp
+    //
+    // Collection: scans
+    // Document ID: {scanId}
+    // Fields:
+    //   - uid: string (required) - Owner's UID
+    //   - score: number (required, 0-100) - Security score
+    //   - report: string (required) - AI report text
+    //   - timestamp: string (required, ISO8601) - Scan time
+    //   - signals: list (optional) - Array of signal objects
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidScan(data) {
+      return hasOnlyAllowedFields(['uid', 'score', 'report', 'timestamp', 'signals']) &&
+             data.uid == request.auth.uid &&
+             data.score is number && data.score >= 0 && data.score <= 100 &&
+             data.report is string && data.report.size() < 50000 &&
+             isValidDateString(data.timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if false; // Users cannot delete their profiles via app
+    }
+
+    match /scans/{scanId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidScan(request.resource.data);
+      allow update: if false; // Scans are immutable history
+      allow delete: if isDocOwner();
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

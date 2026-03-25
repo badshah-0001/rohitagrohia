@@ -1,0 +1,9 @@
+{
+  "name": "Sentinel AI: Device Security Auditor",
+  "description": "An AI-powered security scanner that analyzes your browser environment and provides a comprehensive device security report.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
